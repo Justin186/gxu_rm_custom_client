@@ -1,0 +1,5 @@
+# 用于 RoboMaster 自定义客户端开发的 Python 依赖
+av>=11.0.0
+opencv-python>=4.8.0
+numpy>=1.24.0
+pyserial>=3.5 
