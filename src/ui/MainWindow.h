@@ -5,6 +5,8 @@
 #include <QImage>
 #include <QMouseEvent>
 #include <QKeyEvent>
+#include <QWheelEvent>
+#include <QTimer>
 
 class VideoReceiver;
 class VideoDecoder;
@@ -22,14 +24,20 @@ protected:
     void paintEvent(QPaintEvent *event) override;
     void mousePressEvent(QMouseEvent *event) override;
     void mouseReleaseEvent(QMouseEvent *event) override;
+    void mouseMoveEvent(QMouseEvent *event) override;
+    void wheelEvent(QWheelEvent *event) override;
     void keyPressEvent(QKeyEvent *event) override;
     void keyReleaseEvent(QKeyEvent *event) override;
+    void focusOutEvent(QFocusEvent *event) override;
 
 private slots:
     void onFrameReady(const QImage &image);
     // UI状态更新槽函数
     void updateHp(int hp);
     void updateHeat(int heat);
+    
+    // 75Hz 控制推流时钟
+    void onControlTick();
 
 private:
     VideoReceiver *m_videoReceiver = nullptr;
@@ -37,6 +45,20 @@ private:
     MqttManager *m_mqttManager = nullptr;
     
     QImage m_currentFrame;
+    QTimer *m_controlTimer = nullptr;
+
+    // 键鼠状态缓存
+    bool m_leftButton = false;
+    bool m_rightButton = false;
+    bool m_midButton = false;
+    int m_mouseX = 0;
+    int m_mouseY = 0;
+    int m_mouseZ = 0;
+    uint32_t m_keyboardValue = 0;
+
+    // 鼠标抓取状态
+    bool m_mouseLocked = false;
+    void setMouseLocked(bool locked);
 };
 
 #endif // MAINWINDOW_H
