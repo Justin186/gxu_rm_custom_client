@@ -1,1 +1,4 @@
-venv
+venv/
+build/
+stage1_core/
+.vscode/
