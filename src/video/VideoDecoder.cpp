@@ -1,13 +1,13 @@
 #include "VideoDecoder.h"
 #include <QDebug>
 
-VideoDecoder::VideoDecoder(QObject *parent) : QThread(parent) {
+VideoDecoder::VideoDecoder(AVCodecID codecId, QObject *parent) : QThread(parent) {
     // 屏蔽FFmpeg过于多余的内部报错（如刚启动时必须等待I帧导致的 PPS 丢失错误）
     // 把日志级别调至 FATAL（或者 QUIET），彻底告别刷屏
     av_log_set_level(AV_LOG_FATAL);
 
     // 强制声明 H.265 (HEVC) 解码器
-    m_codec = avcodec_find_decoder(AV_CODEC_ID_HEVC);
+    m_codec = avcodec_find_decoder(codecId);
     if (!m_codec) {
         qCritical() << "H.265/HEVC codec not found!";
         return;

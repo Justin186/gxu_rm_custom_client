@@ -76,6 +76,7 @@ void MqttManager::on_connect_cb(struct mosquitto *mosq, void *obj, int rc) {
         mosquitto_subscribe(mosq, nullptr, "RobotRespawnStatus", 0);
         mosquitto_subscribe(mosq, nullptr, "RobotDynamicStatus", 0);
         mosquitto_subscribe(mosq, nullptr, "RobotStaticStatus", 0);
+        mosquitto_subscribe(mosq, nullptr, "CustomByteBlock", 0); // 订阅 0x0310 自定义图传数据
         emit self->connected();
     } else {
         qDebug() << "Mosquitto MQTT connect failed:" << mosquitto_connack_string(rc);

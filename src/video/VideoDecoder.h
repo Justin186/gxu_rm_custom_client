@@ -15,7 +15,7 @@ extern "C" {
 class VideoDecoder : public QThread {
     Q_OBJECT
 public:
-    explicit VideoDecoder(QObject *parent = nullptr);
+    explicit VideoDecoder(AVCodecID codecId = AV_CODEC_ID_HEVC, QObject *parent = nullptr);
     ~VideoDecoder();
 
     // 接收子线程安全的调用

@@ -22,6 +22,7 @@ int RobotState::blueScore() const { QMutexLocker l(&m_mutex); return m_blueScore
 int RobotState::stageCountdown() const { QMutexLocker l(&m_mutex); return m_stageCountdown; }
 bool RobotState::canRemoteHeal() const { QMutexLocker l(&m_mutex); return m_canRemoteHeal; }
 bool RobotState::canRemoteAmmo() const { QMutexLocker l(&m_mutex); return m_canRemoteAmmo; }
+QByteArray RobotState::customData() const { QMutexLocker l(&m_mutex); return m_customData; }
 
 void RobotState::updateFromJson(const QByteArray& jsonData) {
     QJsonDocument doc = QJsonDocument::fromJson(jsonData);
@@ -69,6 +70,16 @@ void RobotState::updateFromProtobuf(const QString& topic, const QByteArray& data
             m_maxHp = static_status.max_health();
             m_maxHeat = static_status.max_heat();
             locker.unlock();
+            emit stateUpdated();
+        }
+    } else if (topic == "CustomByteBlock") {
+        rm_client_up::CustomByteBlock custom_block;
+        if (custom_block.ParseFromArray(data.constData(), data.size())) {
+            QMutexLocker locker(&m_mutex);
+            m_customData = QByteArray(custom_block.data().data(), custom_block.data().size());
+            // qDebug() << "📦 [Protobuf] 成功解析 CustomByteBlock! 纯净数据长度:" << m_customData.size();
+            locker.unlock();
+            emit customVideoReceived(m_customData);
             emit stateUpdated();
         }
     }

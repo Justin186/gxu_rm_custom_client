@@ -46,11 +46,33 @@ void VideoReceiver::cleanOldFrames() {
 void VideoReceiver::readPendingDatagrams() {
     while (m_udpSocket->hasPendingDatagrams()) {
         QNetworkDatagram datagram = m_udpSocket->receiveDatagram();
-        const QByteArray &data = datagram.data();
+        QByteArray data = datagram.data();
 
         if (data.size() < 8) {
             continue; // 非法包长
         }
+
+        // 兼容裁判系统 0x0310 自定义数据链路 (帧头 0xA5) 包裹的视频碎片
+        if ((unsigned char)data[0] == 0xA5 && data.size() >= 9) {
+            // 解析 RM 协议头长度
+            uint16_t dataLength = (unsigned char)data[1] | ((unsigned char)data[2] << 8);
+            if (data.size() >= 9 + dataLength) {
+                // 解析 cmd_id
+                uint16_t cmdId = (unsigned char)data[5] | ((unsigned char)data[6] << 8);
+                if (cmdId == 0x0310) { // 成功截获裁判系统自定义图传数据
+                    // 数据域的起始位置是第7字节
+                    // RM 协议: 0xA5(1), len(2), seq(1), crc8(1), cmd_id(2), payload(len), crc16(2)
+                    // payload 位于索引 7 开始，长度为 dataLength
+                    if (dataLength >= 8) {
+                        data = data.mid(7, dataLength); 
+                    } else {
+                        continue;
+                    }
+                }
+            }
+        }
+
+        if (data.size() < 8) continue;
 
         // 解析自定义分片协议头
         const uint16_t frameId = qFromBigEndian<quint16>(reinterpret_cast<const uchar*>(data.constData()));

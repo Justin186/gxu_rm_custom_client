@@ -31,7 +31,9 @@ protected:
     void focusOutEvent(QFocusEvent *event) override;
 
 private slots:
-    void onFrameReady(const QImage &image);
+    void onOfficialFrameReady(const QImage &image);
+    void onCustomFrameReady(const QImage &image);
+    
     // UI状态更新槽函数
     void updateHp(int hp);
     void updateHeat(int heat);
@@ -41,10 +43,13 @@ private slots:
 
 private:
     VideoReceiver *m_videoReceiver = nullptr;
-    VideoDecoder *m_videoDecoder = nullptr;
+    VideoDecoder *m_videoDecoder = nullptr;       // 官方图传 H.265 解码器
+    VideoDecoder *m_customVideoDecoder = nullptr; // 自定义图传 H.264 解码器
     MqttManager *m_mqttManager = nullptr;
     
     QImage m_currentFrame;
+    bool m_useCustomVideo = false; // 按 V 切换图传源
+    
     QTimer *m_controlTimer = nullptr;
 
     // 键鼠状态缓存

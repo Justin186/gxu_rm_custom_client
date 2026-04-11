@@ -24,12 +24,14 @@ public:
     
     bool canRemoteHeal() const;
     bool canRemoteAmmo() const;
+    QByteArray customData() const;
 
     void updateFromJson(const QByteArray& jsonData);
     void updateFromProtobuf(const QString& topic, const QByteArray& data);
 
 signals:
     void stateUpdated(); // 统一用一个信号刷新UI即可，减少信号槽爆炸
+    void customVideoReceived(const QByteArray& data); // 新增信号：抛出由 0x0310 带来的自定义图传流
 
 private:
     explicit RobotState(QObject *parent = nullptr);
@@ -52,6 +54,8 @@ private:
     int m_blueScore = 0;
     int m_stageCountdown = 0;
     
+    QByteArray m_customData;
+
     bool m_canRemoteHeal = false;
     bool m_canRemoteAmmo = false;
 };

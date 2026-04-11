@@ -17,16 +17,21 @@ MainWindow::MainWindow(QWidget *parent)
 
     // 初始化网络与解码层
     m_videoReceiver = new VideoReceiver(3334, this);
-    m_videoDecoder = new VideoDecoder(this);
+    m_videoDecoder = new VideoDecoder(AV_CODEC_ID_HEVC, this);        // 官方 UDP HEVC 流
+    m_customVideoDecoder = new VideoDecoder(AV_CODEC_ID_H264, this);  // 自定义 MQTT H264 流
     
-    m_mqttManager = new MqttManager("CustomClient_UI", this);
-    m_mqttManager->connectToBroker("127.0.0.1", 3333);
+    m_mqttManager = new MqttManager("101", this);
+    m_mqttManager->connectToBroker("192.168.1.30", 3333);
 
     // 绑定 UDP 数据流到解码线程
     connect(m_videoReceiver, &VideoReceiver::dataReceived, m_videoDecoder, &VideoDecoder::pushData);
     
+    // 绑定 MQTT 0x0310 自定义数据流到 自定义图传解码线程
+    connect(&RobotState::instance(), &RobotState::customVideoReceived, m_customVideoDecoder, &VideoDecoder::pushData, Qt::QueuedConnection);
+    
     // 绑定解码线程输出到主线程渲染
-    connect(m_videoDecoder, &VideoDecoder::frameReady, this, &MainWindow::onFrameReady, Qt::QueuedConnection);
+    connect(m_videoDecoder, &VideoDecoder::frameReady, this, &MainWindow::onOfficialFrameReady, Qt::QueuedConnection);
+    connect(m_customVideoDecoder, &VideoDecoder::frameReady, this, &MainWindow::onCustomFrameReady, Qt::QueuedConnection);
 
     // 绑定数据模型变化到UI更新
     connect(&RobotState::instance(), &RobotState::stateUpdated, this, [this](){ update(); });
@@ -34,6 +39,7 @@ MainWindow::MainWindow(QWidget *parent)
 
     // 启动解码线程并赋予高线程优先级，保障其吞吐能力
     m_videoDecoder->start(QThread::HighPriority);
+    m_customVideoDecoder->start(QThread::HighPriority);
 
     // 开启鼠标滑动追踪
     setMouseTracking(true);
@@ -49,14 +55,25 @@ MainWindow::~MainWindow()
 {
     m_videoDecoder->stop();
     m_videoDecoder->wait();
+    m_customVideoDecoder->stop();
+    m_customVideoDecoder->wait();
     if(m_mouseLocked) {
         setMouseLocked(false);
     }
 }
 
-void MainWindow::onFrameReady(const QImage &image) {
-    m_currentFrame = image;
-    update();
+void MainWindow::onOfficialFrameReady(const QImage &image) {
+    if (!m_useCustomVideo) {
+        m_currentFrame = image;
+        update();
+    }
+}
+
+void MainWindow::onCustomFrameReady(const QImage &image) {
+    if (m_useCustomVideo) {
+        m_currentFrame = image;
+        update();
+    }
 }
 
 void MainWindow::updateHp(int hp) {
@@ -82,9 +99,12 @@ void MainWindow::setMouseLocked(bool locked) {
 
 void MainWindow::paintEvent(QPaintEvent *event) {
     QPainter painter(this);
-    painter.fillRect(rect(), Qt::black); // 黑色底
+    painter.setRenderHint(QPainter::Antialiasing); // 开启抗锯齿让线条平滑
+    painter.fillRect(rect(), Qt::black); 
     
-    // 绘制视频背景保持缩放比
+    // ==========================================
+    // 1. 绘制等比例实战视频背景
+    // ==========================================
     if (!m_currentFrame.isNull()) {
         QPixmap pixmap = QPixmap::fromImage(m_currentFrame);
         QPixmap scaled = pixmap.scaled(size(), Qt::KeepAspectRatio, Qt::FastTransformation);
@@ -92,51 +112,154 @@ void MainWindow::paintEvent(QPaintEvent *event) {
         int y = (height() - scaled.height()) / 2;
         painter.drawPixmap(x, y, scaled);
     } else {
-        painter.setPen(Qt::white);
-        painter.drawText(rect(), Qt::AlignCenter, "Waiting for Video Stream (UDP 3334)...");
+        painter.setPen(QColor(0, 255, 255, 150));
+        painter.setFont(QFont("Consolas", 14));
+        QString waitText = m_useCustomVideo ? "WAITING FOR CUSTOM BYTEBLOCK (H.264) ..." : "WAITING FOR OFFICIAL STREAM (UDP: 3334 HEVC) ...";
+        painter.drawText(rect(), Qt::AlignCenter, waitText);
     }
-
-    // 绘制简易 HUD 层 (血条等)
-    painter.setPen(Qt::green);
-    painter.setFont(QFont("Arial", 16, QFont::Bold));
     
-    QString hpText = QString("HP: %1 / %2").arg(RobotState::instance().hp()).arg(RobotState::instance().maxHp());
-    QString heatText = QString("Heat: %1 / %2").arg(RobotState::instance().heat()).arg(RobotState::instance().maxHeat());
-    QString ammoText = QString("Ammo: %1").arg(RobotState::instance().remainingAmmo());
-    QString scoreText = QString("RED %1 : %2 BLUE").arg(RobotState::instance().redScore()).arg(RobotState::instance().blueScore());
-    QString timeText = QString("Time Left: %1s").arg(RobotState::instance().stageCountdown());
+    // 绘制图传模式提示
+    painter.setPen(QColor(0, 255, 0));
+    painter.setFont(QFont("Consolas", 14, QFont::Bold));
+    QString modeText = m_useCustomVideo ? "[V: Switch to Official] CURRENT: CUSTOM H.264 STREAM" : "[V: Switch to Custom] CURRENT: OFFICIAL HEVC STREAM";
+    painter.drawText(10, 30, modeText);
 
-    // 左侧状态栏
-    painter.drawText(20, 60, hpText);
-    painter.drawText(20, 90, heatText);
-    painter.drawText(20, 120, ammoText);
+    // ==========================================
+    // 2. 绘制顶部赛事计分板 (科幻多边形)
+    // ==========================================
+    QPolygon topBar;
+    int topCx = width() / 2;
+    topBar << QPoint(topCx - 260, 0) << QPoint(topCx + 260, 0)
+           << QPoint(topCx + 220, 60) << QPoint(topCx - 220, 60);
 
-    // 顶部中间计分板
+    // 半透明科幻底层
+    painter.setBrush(QColor(10, 20, 30, 180));
+    painter.setPen(QPen(QColor(0, 255, 255, 120), 2));
+    painter.drawPolygon(topBar);
+
+    painter.setFont(QFont("Impact", 22, QFont::Bold));
+    painter.setPen(QColor(255, 80, 80)); // 红色方
+    painter.drawText(topCx - 180, 42, QString("RED %1").arg(RobotState::instance().redScore()));
+    
+    painter.setPen(QColor(80, 150, 255)); // 蓝色方
+    painter.drawText(topCx + 80, 42, QString("BLUE %1").arg(RobotState::instance().blueScore()));
+    
     painter.setPen(Qt::white);
-    painter.setFont(QFont("Arial", 20, QFont::Bold));
-    QFontMetrics fm(painter.font());
-    painter.drawText((width() - fm.horizontalAdvance(scoreText)) / 2, 40, scoreText);
-    painter.drawText((width() - fm.horizontalAdvance(timeText)) / 2, 70, timeText);
-    
-    // 操作提示区域
-    painter.setPen(Qt::yellow);
-    painter.setFont(QFont("Arial", 12, QFont::Normal));
-    if (!m_mouseLocked) {
-        painter.drawText(20, height() - 40, "[Click Screen to Lock Mouse (Press ESC to Unlock)]");
-    } else {
-        painter.drawText(20, height() - 40, "[Mouse Locked - Active Mode]");
-    }
-    
-    painter.setPen(Qt::cyan);
-    painter.drawText(20, height() - 20, "[H] Remote Exchange  [O/I] Ammo Supply  [M] Map  [TAB] Stats");
+    painter.setFont(QFont("Consolas", 14, QFont::Bold));
+    QString timeText = QString("TIME: %1 S").arg(RobotState::instance().stageCountdown());
+    painter.drawText(topCx - 45, 40, timeText);
 
-    // 自定义准星
+    // ==========================================
+    // 3. 绘制左下角生命槽与弹药 (装甲风格)
+    // ==========================================
+    int hp = RobotState::instance().hp();
+    int maxHp = RobotState::instance().maxHp();
+    if (maxHp <= 0) maxHp = 1;
+    float hpRatio = std::min(1.0f, std::max(0.0f, (float)hp / maxHp));
+
+    // 背景底板
+    QPolygon leftPanel;
+    leftPanel << QPoint(20, height() - 160) << QPoint(280, height() - 160)
+              << QPoint(320, height() - 40) << QPoint(20, height() - 40);
+    painter.setBrush(QColor(0, 30, 10, 160));
+    painter.setPen(QPen(QColor(0, 255, 150, 100), 2));
+    painter.drawPolygon(leftPanel);
+
+    // HP 文本
+    painter.setFont(QFont("Consolas", 12, QFont::Bold));
+    painter.setPen(QColor(0, 255, 150));
+    painter.drawText(40, height() - 130, "ARMOR HP");
+
+    // HP 进度条底槽
+    painter.setBrush(QColor(50, 50, 50, 150));
+    painter.setPen(Qt::NoPen);
+    painter.drawRect(40, height() - 120, 220, 15);
+    
+    // HP 渐变变色
+    QColor hpColor = hpRatio > 0.3 ? QColor(0, 255, 100) : QColor(255, 50, 50);
+    painter.setBrush(hpColor);
+    painter.drawRect(40, height() - 120, 220 * hpRatio, 15);
+    
+    painter.setPen(Qt::white);
+    painter.drawText(40 + 220 * hpRatio + 5, height() - 108, QString("%1/%2").arg(hp).arg(maxHp));
+
+    // 弹药数值
+    painter.setPen(QColor(0, 255, 255));
+    painter.drawText(40, height() - 70, QString("AMMO: %1").arg(RobotState::instance().remainingAmmo()));
+
+    // ==========================================
+    // 4. 绘制右下角枪管热量 (警示风格)
+    // ==========================================
+    int heat = RobotState::instance().heat();
+    int maxHeat = RobotState::instance().maxHeat();
+    if (maxHeat <= 0) maxHeat = 1;
+    float heatRatio = std::min(1.0f, std::max(0.0f, (float)heat / maxHeat));
+
+    QPolygon rightPanel;
+    rightPanel << QPoint(width() - 280, height() - 160) << QPoint(width() - 20, height() - 160)
+               << QPoint(width() - 20, height() - 40) << QPoint(width() - 320, height() - 40);
+    painter.setBrush(QColor(40, 10, 0, 160));
+    painter.setPen(QPen(QColor(255, 100, 0, 100), 2));
+    painter.drawPolygon(rightPanel);
+
+    painter.setPen(QColor(255, 150, 0));
+    painter.drawText(width() - 250, height() - 130, "GUN HEAT");
+
+    // 热量底槽
+    painter.setBrush(QColor(50, 50, 50, 150));
+    painter.setPen(Qt::NoPen);
+    painter.drawRect(width() - 250, height() - 120, 200, 15);
+    
+    QColor heatColor = heatRatio < 0.8 ? QColor(255, 150, 0) : QColor(255, 50, 50);
+    painter.setBrush(heatColor);
+    painter.drawRect(width() - 250, height() - 120, 200 * heatRatio, 15);
+    
+    painter.setPen(Qt::white);
+    painter.drawText(width() - 250 - 45, height() - 108, QString("%1/%2").arg(heat).arg(maxHeat));
+
+    // ==========================================
+    // 5. 准星与弹道线 (狙击手/步兵专属)
+    // ==========================================
     int cx = width() / 2;
     int cy = height() / 2;
-    painter.setPen(QPen(Qt::red, 2));
-    painter.drawLine(cx - 20, cy, cx + 20, cy);
-    painter.drawLine(cx, cy - 20, cx, cy + 20);
-    painter.drawEllipse(QPoint(cx, cy), 15, 15);
+    
+    // 中心原点
+    painter.setPen(Qt::NoPen);
+    painter.setBrush(QColor(255, 50, 50, 220));
+    painter.drawEllipse(QPoint(cx, cy), 2, 2);
+    
+    // 高科技分段圆环
+    painter.setPen(QPen(QColor(0, 255, 200, 180), 2));
+    painter.setBrush(Qt::NoBrush);
+    painter.drawArc(cx - 25, cy - 25, 50, 50, 30 * 16, 120 * 16);
+    painter.drawArc(cx - 25, cy - 25, 50, 50, 210 * 16, 120 * 16);
+    
+    // T字准星角
+    painter.drawLine(cx - 40, cy, cx - 15, cy);
+    painter.drawLine(cx + 15, cy, cx + 40, cy);
+    painter.drawLine(cx, cy - 40, cx, cy - 15);
+    painter.drawLine(cx, cy + 15, cx, cy + 40);
+    
+    // 虚拟抛物预测线 (下坠刻度估算)
+    painter.setPen(QPen(QColor(0, 255, 200, 100), 1, Qt::DotLine));
+    painter.drawLine(cx, cy + 45, cx, cy + 120);
+    painter.drawLine(cx - 10, cy + 80, cx + 10, cy + 80);
+    painter.drawLine(cx - 15, cy + 120, cx + 15, cy + 120);
+
+    // ==========================================
+    // 6. 操作提示区域 (底部居中)
+    // ==========================================
+    painter.setFont(QFont("Consolas", 12, QFont::Normal));
+    if (!m_mouseLocked) {
+        painter.setPen(QColor(255, 255, 0, 220));
+        painter.drawText(cx - 230, height() - 45, "[ CLICK SCREEN TO LOCK MOUSE (PRESS ESC TO UNLOCK) ]");
+    } else {
+        painter.setPen(QColor(0, 255, 100, 220));
+        painter.drawText(cx - 160, height() - 45, "[ MOUSE LOCKED - COMBAT MODE ACTIVE ]");
+    }
+    
+    painter.setPen(QColor(0, 200, 255, 150));
+    painter.drawText(cx - 240, height() - 20, "[H] EXH  [O/I] AMMO  [M] MAP  [TAB] STATS");
 }
 
 void MainWindow::focusOutEvent(QFocusEvent *event) {
@@ -192,6 +315,9 @@ void MainWindow::keyPressEvent(QKeyEvent *event) {
         int key = event->key();
         if (key == Qt::Key_Escape) {
             setMouseLocked(false);
+        } else if (key == Qt::Key_V) {
+            m_useCustomVideo = !m_useCustomVideo;
+            qDebug() << "📸 图传切换至:" << (m_useCustomVideo ? "Custom ByteBlock H.264" : "Official UDP HEVC");
         } else if (key == Qt::Key_W) m_keyboardValue |= (1 << 0);
         else if (key == Qt::Key_S) m_keyboardValue |= (1 << 1);
         else if (key == Qt::Key_A) m_keyboardValue |= (1 << 2);
