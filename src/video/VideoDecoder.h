@@ -5,6 +5,7 @@
 #include <QImage>
 #include <QMutex>
 #include <list>
+#include <atomic>
 
 extern "C" {
 #include <libavcodec/avcodec.h>
@@ -21,6 +22,12 @@ public:
     // 接收子线程安全的调用
     void pushData(const QByteArray &data);
     void stop();
+    void requestFlush(); // 请求手工刷新解码器缓冲清理花屏
+
+    int getReceivedPackets() const { return m_receivedPackets.load(); }
+    int getDecodedFrames() const { return m_decodedFrames.load(); }
+    int getDecodeErrors() const { return m_decodeErrors.load(); }
+    int getQueueSize() { QMutexLocker locker(&m_mutex); return m_queue.size(); }
 
 signals:
     void frameReady(const QImage &image);
@@ -45,6 +52,11 @@ private:
     int m_pixFmt = -1; // 保存 AVPixelFormat
 
     bool m_running = true;
+    std::atomic<bool> m_needFlush{false};
+    std::atomic<int> m_receivedPackets{0};
+    std::atomic<int> m_decodedFrames{0};
+    std::atomic<int> m_decodeErrors{0};
+    
     QMutex m_mutex;
     std::list<QByteArray> m_queue;
 };

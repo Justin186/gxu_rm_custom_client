@@ -15,11 +15,11 @@ VideoDecoder::VideoDecoder(AVCodecID codecId, QObject *parent) : QThread(parent)
 
     m_codecCtx = avcodec_alloc_context3(m_codec);
     
-    // 关键修正：开启 H.265 最强容错隐蔽和极低延迟解码功能
+    // 关键修正：参考 client_main.py 内部 PyAV 的低延时设定
     m_codecCtx->flags |= AV_CODEC_FLAG_LOW_DELAY;
     m_codecCtx->flags2 |= AV_CODEC_FLAG2_FAST;
-    m_codecCtx->error_concealment = 3; // FF_EC_GUESS_MVS | FF_EC_DEBLOCK，丢包就自动猜图遮掩，不报花屏错
-    m_codecCtx->thread_count = 2;      // 小开一下多线程加速解码吞吐
+    m_codecCtx->thread_count = 2;      
+    m_codecCtx->thread_type = FF_THREAD_FRAME; // 帧级多线程解码，跟 python av.Codec.thread_type = 'FRAME' 完全一致
 
     if (avcodec_open2(m_codecCtx, m_codec, nullptr) < 0) {
         qCritical() << "Could not open H.265/HEVC codec!";
@@ -55,11 +55,10 @@ VideoDecoder::~VideoDecoder() {
 
 void VideoDecoder::pushData(const QByteArray &data) {
     if (data.isEmpty()) return;
+    m_receivedPackets++;
     QMutexLocker locker(&m_mutex);
-    // 限定队列长度防止内存泄漏
-    if (m_queue.size() > 100) {
-        // 放宽队列到 100 帧（大约 3 秒以上缓冲），如果还是超出则只能丢弃最老的帧
-        // 这在极端弱网/主板卡顿下才触发丢弃
+    // 放宽队列到 5000（与 Python 客户端一致，防止小片段碎片被挤掉导致解码断链）
+    if (m_queue.size() > 5000) {
         m_queue.pop_front();
     }
     m_queue.push_back(data);
@@ -69,8 +68,18 @@ void VideoDecoder::stop() {
     m_running = false;
 }
 
+void VideoDecoder::requestFlush() {
+    m_needFlush = true;
+}
+
 void VideoDecoder::run() {
     while (m_running) {
+        if (m_needFlush) {
+            m_needFlush = false;
+            // 收到指令后安全地在此主执行线程中清除所有参考缓冲，抛弃当前损坏序列并等待下一个I帧
+            if (m_codecCtx) avcodec_flush_buffers(m_codecCtx);
+        }
+
         QByteArray data;
         {
             QMutexLocker locker(&m_mutex);
@@ -105,6 +114,7 @@ void VideoDecoder::processData(const uint8_t *data, int size) {
                                           AV_NOPTS_VALUE, AV_NOPTS_VALUE, 0);
 
         if (parsed_len < 0) {
+            m_decodeErrors++;
             break; // 遇到无可救药的解析错误则跳过该包
         }
 
@@ -114,10 +124,16 @@ void VideoDecoder::processData(const uint8_t *data, int size) {
         // 如果 parser 从碎流中分析出并产生了一个完整的 AVPacket
         if (m_packet->size > 0) {
             int ret = avcodec_send_packet(m_codecCtx, m_packet);
+            if (ret < 0 && ret != AVERROR(EAGAIN) && ret != AVERROR_EOF) {
+                m_decodeErrors++;
+            }
             // 这里即使送包失败或者返回 EAGAIN，也务必走一遍 receive_frame 疏通解码器缓存池，否则极易发生堆积段错误
             while (true) {
                 int recv_ret = avcodec_receive_frame(m_codecCtx, m_frame);
                 if (recv_ret != 0) {
+                    if (recv_ret != AVERROR(EAGAIN) && recv_ret != AVERROR_EOF) {
+                        m_decodeErrors++;
+                    }
                     break; // 读不到(EAGAIN/EOF等)即可跳出循环
                 }
 
@@ -159,6 +175,7 @@ void VideoDecoder::processData(const uint8_t *data, int size) {
                 av_frame_unref(m_frame); 
 
                 if (ret_scale > 0) {
+                    m_decodedFrames++;
                     emit frameReady(image.copy()); // 安全深拷贝发送到主线程
                 }
             }

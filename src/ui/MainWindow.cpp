@@ -21,7 +21,7 @@ MainWindow::MainWindow(QWidget *parent)
     m_customVideoDecoder = new VideoDecoder(AV_CODEC_ID_H264, this);  // 自定义 MQTT H264 流
     
     m_mqttManager = new MqttManager("101", this);
-    m_mqttManager->connectToBroker("192.168.1.30", 3333);
+    m_mqttManager->connectToBroker("192.168.1.2", 3333);
 
     // 绑定 UDP 数据流到解码线程
     connect(m_videoReceiver, &VideoReceiver::dataReceived, m_videoDecoder, &VideoDecoder::pushData);
@@ -123,6 +123,21 @@ void MainWindow::paintEvent(QPaintEvent *event) {
     painter.setFont(QFont("Consolas", 14, QFont::Bold));
     QString modeText = m_useCustomVideo ? "[V: Switch to Official] CURRENT: CUSTOM H.264 STREAM" : "[V: Switch to Custom] CURRENT: OFFICIAL HEVC STREAM";
     painter.drawText(10, 30, modeText);
+
+    // 绘制图传诊断信息与热键 (排查丢包花屏)
+    VideoDecoder *activeDecoder = m_useCustomVideo ? m_customVideoDecoder : m_videoDecoder;
+    if (activeDecoder) {
+        int pkts = activeDecoder->getReceivedPackets();
+        int frames = activeDecoder->getDecodedFrames();
+        int errors = activeDecoder->getDecodeErrors();
+        int queueSize = activeDecoder->getQueueSize();
+        
+        painter.setPen(QColor(255, 255, 0)); // 黄色警告字
+        painter.setFont(QFont("Consolas", 12, QFont::Bold));
+        QString debugText = QString("STREAM STATS | Packets: %1 | Decoded: %2 | Errors: %3 | Queue: %4 [Press R to Refresh/Clear Artifacts]")
+                              .arg(pkts).arg(frames).arg(errors).arg(queueSize);
+        painter.drawText(10, 55, debugText);
+    }
 
     // ==========================================
     // 2. 绘制顶部赛事计分板 (科幻多边形)
@@ -318,6 +333,11 @@ void MainWindow::keyPressEvent(QKeyEvent *event) {
         } else if (key == Qt::Key_V) {
             m_useCustomVideo = !m_useCustomVideo;
             qDebug() << "📸 图传切换至:" << (m_useCustomVideo ? "Custom ByteBlock H.264" : "Official UDP HEVC");
+        } else if (key == Qt::Key_R) { // 按 R 手动矫正/清空解码器缓存
+            if (m_useCustomVideo && m_customVideoDecoder) m_customVideoDecoder->requestFlush();
+            else if (!m_useCustomVideo && m_videoDecoder) m_videoDecoder->requestFlush();
+            qDebug() << "🔄 请求强制刷新图传底层缓存，尝试恢复花屏...";
+            m_keyboardValue |= (1 << 8);
         } else if (key == Qt::Key_W) m_keyboardValue |= (1 << 0);
         else if (key == Qt::Key_S) m_keyboardValue |= (1 << 1);
         else if (key == Qt::Key_A) m_keyboardValue |= (1 << 2);
@@ -326,7 +346,6 @@ void MainWindow::keyPressEvent(QKeyEvent *event) {
         else if (key == Qt::Key_Control) m_keyboardValue |= (1 << 5);
         else if (key == Qt::Key_Q) m_keyboardValue |= (1 << 6);
         else if (key == Qt::Key_E) m_keyboardValue |= (1 << 7);
-        else if (key == Qt::Key_R) m_keyboardValue |= (1 << 8);
         else if (key == Qt::Key_F) m_keyboardValue |= (1 << 9);
         else if (key == Qt::Key_G) m_keyboardValue |= (1 << 10);
         else if (key == Qt::Key_Z) m_keyboardValue |= (1 << 11);

@@ -77,8 +77,8 @@ void RobotState::updateFromProtobuf(const QString& topic, const QByteArray& data
         if (custom_block.ParseFromArray(data.constData(), data.size())) {
             QMutexLocker locker(&m_mutex);
             m_customData = QByteArray(custom_block.data().data(), custom_block.data().size());
-            // qDebug() << "📦 [Protobuf] 成功解析 CustomByteBlock! 纯净数据长度:" << m_customData.size();
             locker.unlock();
+            
             emit customVideoReceived(m_customData);
             emit stateUpdated();
         }
