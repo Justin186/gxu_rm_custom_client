@@ -21,6 +21,11 @@ public:
     int redScore() const;
     int blueScore() const;
     int stageCountdown() const;
+    // Base and outpost HP for both sides
+    int redBaseHp() const;
+    int redOutpostHp() const;
+    int blueBaseHp() const;
+    int blueOutpostHp() const;
     
     bool canRemoteHeal() const;
     bool canRemoteAmmo() const;
@@ -53,6 +58,11 @@ private:
     int m_redScore = 0;
     int m_blueScore = 0;
     int m_stageCountdown = 0;
+    // 默认满血值（可由上位机下发覆盖）
+    int m_redBaseHp = 5000;
+    int m_redOutpostHp = 1500;
+    int m_blueBaseHp = 5000;
+    int m_blueOutpostHp = 1500;
     
     QByteArray m_customData;
 

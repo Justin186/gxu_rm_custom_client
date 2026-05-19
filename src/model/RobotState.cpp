@@ -20,6 +20,10 @@ float RobotState::fireRate() const { QMutexLocker l(&m_mutex); return m_fireRate
 int RobotState::redScore() const { QMutexLocker l(&m_mutex); return m_redScore; }
 int RobotState::blueScore() const { QMutexLocker l(&m_mutex); return m_blueScore; }
 int RobotState::stageCountdown() const { QMutexLocker l(&m_mutex); return m_stageCountdown; }
+int RobotState::redBaseHp() const { QMutexLocker l(&m_mutex); return m_redBaseHp; }
+int RobotState::redOutpostHp() const { QMutexLocker l(&m_mutex); return m_redOutpostHp; }
+int RobotState::blueBaseHp() const { QMutexLocker l(&m_mutex); return m_blueBaseHp; }
+int RobotState::blueOutpostHp() const { QMutexLocker l(&m_mutex); return m_blueOutpostHp; }
 bool RobotState::canRemoteHeal() const { QMutexLocker l(&m_mutex); return m_canRemoteHeal; }
 bool RobotState::canRemoteAmmo() const { QMutexLocker l(&m_mutex); return m_canRemoteAmmo; }
 QByteArray RobotState::customData() const { QMutexLocker l(&m_mutex); return m_customData; }

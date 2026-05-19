@@ -1,5 +1,6 @@
 #include "MainWindow.h"
 #include <QPainter>
+#include <QLinearGradient>
 #include <QDebug>
 #include <QApplication>
 #include "../network/VideoReceiver.h"
@@ -132,7 +133,7 @@ void MainWindow::paintEvent(QPaintEvent *event) {
     // 绘制图传模式提示
     painter.setPen(QColor(0, 255, 0));
     painter.setFont(QFont("Consolas", 10, QFont::Bold));
-    QString modeText = m_useCustomVideo ? "CURRENT: CUSTOM H.264 STREAM" : "CURRENT: OFFICIAL HEVC STREAM";
+    QString modeText = m_useCustomVideo ? "CURRENT: CUSTOM" : "CURRENT: OFFICIAL";
     painter.drawText(10, 20, modeText);
 
     // 绘制图传诊断信息与热键 (排查丢包花屏)
@@ -150,30 +151,132 @@ void MainWindow::paintEvent(QPaintEvent *event) {
         painter.drawText(10, 40, debugText);
     }
 
-    // ==========================================
-    // 2. 绘制顶部赛事计分板 (科幻多边形)
-    // ==========================================
-    QPolygon topBar;
-    int topCx = width() / 2;
-    topBar << QPoint(topCx - 260, 0) << QPoint(topCx + 260, 0)
-           << QPoint(topCx + 220, 60) << QPoint(topCx - 220, 60);
+        // ==========================================
+        // 2. 顶部赛事计分板与血量条布局（分秒格式时间，左红右蓝）
+        // ==========================================
+        const int topY = 8;
+        const int barHOutpost = 16;
+        const int barHBase = 20;
+        const int slant = 18;
+        const int spacer = 10;
+        const int redOutpostW = 116;
+        const int redBaseW = 240;
+        const int centerClusterW = 220;
+        const int blueBaseW = 240;
+        const int blueOutpostW = 116;
 
-    // 半透明科幻底层
-    painter.setBrush(QColor(10, 20, 30, 180));
-    painter.setPen(QPen(QColor(0, 255, 255, 120), 2));
-    painter.drawPolygon(topBar);
+        const int topCx = width() / 2;
+        const int totalW = redOutpostW + spacer + redBaseW + spacer + centerClusterW + spacer + blueBaseW + spacer + blueOutpostW;
+        int x0 = topCx - totalW / 2;
 
-    painter.setFont(QFont("Impact", 22, QFont::Bold));
-    painter.setPen(QColor(255, 80, 80)); // 红色方
-    painter.drawText(topCx - 180, 42, QString("RED %1").arg(RobotState::instance().redScore()));
-    
-    painter.setPen(QColor(80, 150, 255)); // 蓝色方
-    painter.drawText(topCx + 80, 42, QString("BLUE %1").arg(RobotState::instance().blueScore()));
-    
-    painter.setPen(Qt::white);
-    painter.setFont(QFont("Consolas", 14, QFont::Bold));
-    QString timeText = QString("TIME: %1 S").arg(RobotState::instance().stageCountdown());
-    painter.drawText(topCx - 45, 40, timeText);
+        auto drawParallelogramBar = [&](int x, int y, int w, int h, int slantOffset,
+                                        float ratio, const QColor &backLeft, const QColor &backRight,
+                                        const QColor &fillLeft, const QColor &fillMid, const QColor &fillRight,
+                                        const QColor &textColor, const QString &label, bool alignLeft = false) {
+            auto makePoly = [&](int innerW) {
+                int safeW = std::max(0, innerW);
+                return QPolygon{
+                    QPoint(x, y),
+                    QPoint(x + safeW, y),
+                    QPoint(x + safeW + slantOffset, y + h),
+                    QPoint(x + slantOffset, y + h)
+                };
+            };
+
+            QPolygon backPoly = makePoly(w);
+            painter.setPen(QPen(backRight, 1));
+            painter.setBrush(backLeft);
+            painter.drawPolygon(backPoly);
+
+            int fillW = std::max(2, static_cast<int>(w * qBound(0.0f, ratio, 1.0f)));
+            QPolygon fillPoly = makePoly(fillW);
+            QLinearGradient grad(QPointF(x, y), QPointF(x, y + h));
+            grad.setColorAt(0.0, fillRight);
+            grad.setColorAt(0.65, fillMid);
+            grad.setColorAt(1.0, fillLeft);
+            painter.setBrush(grad);
+            painter.setPen(Qt::NoPen);
+            painter.drawPolygon(fillPoly);
+
+            painter.setPen(textColor);
+            painter.setFont(QFont("Consolas", 10, QFont::Bold));
+            QRect textRect(x + std::min(0, slantOffset), y - 1, w + std::abs(slantOffset), h + 2);
+            painter.drawText(textRect, alignLeft ? (Qt::AlignLeft | Qt::AlignVCenter) : Qt::AlignCenter, label);
+        };
+
+        // 红方前哨（短）
+        int redOutpostHp = RobotState::instance().redOutpostHp();
+        int redOutpostMax = 1500;
+        float roRatio = qBound(0.0f, (float)redOutpostHp / redOutpostMax, 1.0f);
+        drawParallelogramBar(
+            x0, topY + 2, redOutpostW, barHOutpost, slant, roRatio,
+            QColor(55, 10, 10, 170), QColor(150, 40, 40, 220),
+            QColor(80, 20, 20), QColor(230, 70, 70), QColor(255, 140, 90),
+            Qt::white, QString("%1/%2").arg(redOutpostHp).arg(redOutpostMax)
+        );
+
+        // 红方基地（长）
+        int redBaseHp = RobotState::instance().redBaseHp();
+        int redBaseMax = 5000;
+        float rbRatio = qBound(0.0f, (float)redBaseHp / redBaseMax, 1.0f);
+        drawParallelogramBar(
+            x0 + redOutpostW + spacer, topY, redBaseW, barHBase, slant, rbRatio,
+            QColor(35, 10, 10, 175), QColor(180, 50, 50, 220),
+            QColor(120, 20, 20), QColor(255, 90, 90), QColor(255, 170, 110),
+            Qt::white, QString("%1/%2").arg(redBaseHp).arg(redBaseMax)
+        );
+
+        // 中间区：红方分数、倒计时、蓝方分数
+        int redScore = RobotState::instance().redScore();
+        int blueScore = RobotState::instance().blueScore();
+        int secs = RobotState::instance().stageCountdown();
+        int mm = secs / 60;
+        int ss = secs % 60;
+        QString timeText = QString("%1:%2").arg(mm).arg(ss, 2, 10, QChar('0'));
+
+        int centerX = x0 + redOutpostW + spacer + redBaseW + spacer;
+        QRect centerRect(centerX, topY - 2, centerClusterW, 32);
+        QPolygon centerPoly;
+        centerPoly << QPoint(centerRect.left(), centerRect.top())
+               << QPoint(centerRect.right(), centerRect.top())
+               << QPoint(centerRect.right() - 30, centerRect.bottom())
+               << QPoint(centerRect.left() + 30, centerRect.bottom());
+        painter.setBrush(QColor(10, 18, 28, 175));
+        painter.setPen(QPen(QColor(0, 255, 255, 90), 1));
+        painter.drawPolygon(centerPoly);
+
+        painter.setFont(QFont("Impact", 22, QFont::Bold));
+        painter.setPen(QColor(255, 120, 120));
+        painter.drawText(topCx - 80, topY + 24, QString::number(redScore));
+
+        painter.setFont(QFont("Consolas", 18, QFont::Bold));
+        painter.setPen(Qt::white);
+        painter.drawText(topCx - 30, topY + 22, timeText);
+
+        painter.setFont(QFont("Impact", 22, QFont::Bold));
+        painter.setPen(QColor(130, 180, 255));
+        painter.drawText(topCx + 60, topY + 24, QString::number(blueScore));
+
+        // 蓝方基地与前哨（基地长，前哨短）
+        int blueBaseHp = RobotState::instance().blueBaseHp();
+        int blueBaseMax = 5000;
+        float bbRatio = qBound(0.0f, (float)blueBaseHp / blueBaseMax, 1.0f);
+        drawParallelogramBar(
+            centerX + centerClusterW + spacer, topY, blueBaseW, barHBase, -slant, bbRatio,
+            QColor(10, 10, 35, 175), QColor(50, 90, 180, 220),
+            QColor(20, 30, 120), QColor(90, 150, 255), QColor(160, 220, 255),
+            Qt::white, QString("%1/%2").arg(blueBaseHp).arg(blueBaseMax)
+        );
+
+        int blueOutpostHp = RobotState::instance().blueOutpostHp();
+        int blueOutpostMax = 1500;
+        float boRatio = qBound(0.0f, (float)blueOutpostHp / blueOutpostMax, 1.0f);
+        drawParallelogramBar(
+            centerX + centerClusterW + spacer + blueBaseW + spacer, topY + 2, blueOutpostW, barHOutpost, -slant, boRatio,
+            QColor(10, 10, 40, 170), QColor(70, 120, 200, 220),
+            QColor(20, 50, 130), QColor(120, 180, 255), QColor(180, 230, 255),
+            Qt::white, QString("%1/%2").arg(blueOutpostHp).arg(blueOutpostMax)
+        );
 
     // ==========================================
     // 3. 绘制左下角生命槽与弹药 (装甲风格)
@@ -196,18 +299,45 @@ void MainWindow::paintEvent(QPaintEvent *event) {
     painter.setPen(QColor(0, 255, 150));
     painter.drawText(40, height() - 130, "ARMOR HP");
 
-    // HP 进度条底槽
-    painter.setBrush(QColor(50, 50, 50, 150));
-    painter.setPen(Qt::NoPen);
-    painter.drawRect(40, height() - 120, 220, 15);
-    
-    // HP 渐变变色
-    QColor hpColor = hpRatio > 0.3 ? QColor(0, 255, 100) : QColor(255, 50, 50);
-    painter.setBrush(hpColor);
-    painter.drawRect(40, height() - 120, 220 * hpRatio, 15);
-    
-    painter.setPen(Qt::white);
-    painter.drawText(40 + 220 * hpRatio + 5, height() - 108, QString("%1/%2").arg(hp).arg(maxHp));
+    auto drawSlantedFillBar = [&](int x, int y, int w, int h, int slantOffset, float ratio,
+                                  const QColor &bgLeft, const QColor &bgRight,
+                                  const QColor &fgLeft, const QColor &fgMid, const QColor &fgRight,
+                                  const QString &valueText) {
+        auto makePoly = [&](int innerW) {
+            int safeW = std::max(0, innerW);
+            return QPolygon{
+                QPoint(x, y),
+                QPoint(x + safeW, y),
+                QPoint(x + safeW + slantOffset, y + h),
+                QPoint(x + slantOffset, y + h)
+            };
+        };
+
+        painter.setPen(QPen(bgRight, 1));
+        painter.setBrush(bgLeft);
+        painter.drawPolygon(makePoly(w));
+
+        int fillW = std::max(2, static_cast<int>(w * qBound(0.0f, ratio, 1.0f)));
+        QLinearGradient grad(QPointF(x, y), QPointF(x, y + h));
+        grad.setColorAt(0.0, fgLeft);
+        grad.setColorAt(0.65, fgMid);
+        grad.setColorAt(1.0, fgRight);
+        painter.setPen(Qt::NoPen);
+        painter.setBrush(grad);
+        painter.drawPolygon(makePoly(fillW));
+
+        painter.setPen(Qt::white);
+        painter.setFont(QFont("Consolas", 12, QFont::Bold));
+        painter.drawText(QRect(x + std::min(0, slantOffset), y - 1, w + std::abs(slantOffset), h + 2), Qt::AlignCenter, valueText);
+    };
+
+    // HP 条（斜的平行四边形 + 渐变）
+    drawSlantedFillBar(
+        40, height() - 120, 220, 18, 7, hpRatio,
+        QColor(35, 35, 35, 165), QColor(65, 65, 65, 165),
+        QColor(0, 210, 90), QColor(90, 255, 110), QColor(255, 235, 70),
+        QString("%1/%2").arg(hp).arg(maxHp)
+    );
 
     // 弹药数值
     painter.setPen(QColor(0, 255, 255));
@@ -231,17 +361,13 @@ void MainWindow::paintEvent(QPaintEvent *event) {
     painter.setPen(QColor(255, 150, 0));
     painter.drawText(width() - 250, height() - 130, "GUN HEAT");
 
-    // 热量底槽
-    painter.setBrush(QColor(50, 50, 50, 150));
-    painter.setPen(Qt::NoPen);
-    painter.drawRect(width() - 250, height() - 120, 200, 15);
-    
-    QColor heatColor = heatRatio < 0.8 ? QColor(255, 150, 0) : QColor(255, 50, 50);
-    painter.setBrush(heatColor);
-    painter.drawRect(width() - 250, height() - 120, 200 * heatRatio, 15);
-    
-    painter.setPen(Qt::white);
-    painter.drawText(width() - 250 - 45, height() - 108, QString("%1/%2").arg(heat).arg(maxHeat));
+    // 热量条（斜的平行四边形 + 渐变）
+    drawSlantedFillBar(
+        width() - 250, height() - 120, 200, 18, -7, heatRatio,
+        QColor(35, 20, 0, 165), QColor(65, 35, 0, 165),
+        QColor(255, 150, 0), QColor(255, 220, 0), QColor(255, 60, 60),
+        QString("%1/%2").arg(heat).arg(maxHeat)
+    );
 
     // ==========================================
     // 5. 准星与弹道线 (狙击手/步兵专属)
@@ -278,14 +404,14 @@ void MainWindow::paintEvent(QPaintEvent *event) {
     painter.setFont(QFont("Consolas", 12, QFont::Normal));
     if (!m_mouseLocked) {
         painter.setPen(QColor(255, 255, 0, 220));
-        painter.drawText(cx - 230, height() - 45, "[ CLICK SCREEN TO LOCK MOUSE (PRESS ESC TO UNLOCK) ]");
+        painter.drawText(topCx - 90, height() - 45, "[ MOUSE UNLOCKED ]");
     } else {
         painter.setPen(QColor(0, 255, 100, 220));
-        painter.drawText(cx - 160, height() - 45, "[ MOUSE LOCKED - COMBAT MODE ACTIVE ]");
+        painter.drawText(topCx - 80, height() - 45, "[ MOUSE LOCKED ]");
     }
     
     painter.setPen(QColor(0, 200, 255, 150));
-    painter.drawText(cx - 240, height() - 20, "[H] EXH  [O/I] AMMO  [M] MAP  [TAB] STATS");
+    painter.drawText(topCx - 190, height() - 20, "[H] EXH  [O/I] AMMO  [M] MAP  [TAB] STATS");
 }
 
 void MainWindow::focusOutEvent(QFocusEvent *event) {
