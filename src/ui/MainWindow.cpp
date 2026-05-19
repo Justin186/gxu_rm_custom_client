@@ -21,7 +21,7 @@ MainWindow::MainWindow(QWidget *parent)
     m_customVideoDecoder = new VideoDecoder(AV_CODEC_ID_H264, this);  // 自定义 MQTT H264 流
     
     m_mqttManager = new MqttManager("101", this);
-    m_mqttManager->connectToBroker("192.168.1.2", 3333);
+    m_mqttManager->connectToBroker("192.168.12.1", 3333);
 
     // 绑定 UDP 数据流到解码线程
     connect(m_videoReceiver, &VideoReceiver::dataReceived, m_videoDecoder, &VideoDecoder::pushData);
@@ -111,6 +111,17 @@ void MainWindow::paintEvent(QPaintEvent *event) {
         int x = (width() - scaled.width()) / 2;
         int y = (height() - scaled.height()) / 2;
         painter.drawPixmap(x, y, scaled);
+
+        // 如果是自定义图传，绘制 6x6 网格线 (30%透明度)
+        if (m_useCustomVideo) {
+            painter.setPen(QPen(QColor(255, 255, 255, 77), 1, Qt::SolidLine));
+            float stepX = scaled.width() / 6.0f;
+            float stepY = scaled.height() / 6.0f;
+            for (int i = 1; i < 6; ++i) {
+                painter.drawLine(x, y + static_cast<int>(i * stepY), x + scaled.width(), y + static_cast<int>(i * stepY));
+                painter.drawLine(x + static_cast<int>(i * stepX), y, x + static_cast<int>(i * stepX), y + scaled.height());
+            }
+        }
     } else {
         painter.setPen(QColor(0, 255, 255, 150));
         painter.setFont(QFont("Consolas", 14));
@@ -120,9 +131,9 @@ void MainWindow::paintEvent(QPaintEvent *event) {
     
     // 绘制图传模式提示
     painter.setPen(QColor(0, 255, 0));
-    painter.setFont(QFont("Consolas", 14, QFont::Bold));
-    QString modeText = m_useCustomVideo ? "[V: Switch to Official] CURRENT: CUSTOM H.264 STREAM" : "[V: Switch to Custom] CURRENT: OFFICIAL HEVC STREAM";
-    painter.drawText(10, 30, modeText);
+    painter.setFont(QFont("Consolas", 10, QFont::Bold));
+    QString modeText = m_useCustomVideo ? "CURRENT: CUSTOM H.264 STREAM" : "CURRENT: OFFICIAL HEVC STREAM";
+    painter.drawText(10, 20, modeText);
 
     // 绘制图传诊断信息与热键 (排查丢包花屏)
     VideoDecoder *activeDecoder = m_useCustomVideo ? m_customVideoDecoder : m_videoDecoder;
@@ -133,10 +144,10 @@ void MainWindow::paintEvent(QPaintEvent *event) {
         int queueSize = activeDecoder->getQueueSize();
         
         painter.setPen(QColor(255, 255, 0)); // 黄色警告字
-        painter.setFont(QFont("Consolas", 12, QFont::Bold));
-        QString debugText = QString("STREAM STATS | Packets: %1 | Decoded: %2 | Errors: %3 | Queue: %4 [Press R to Refresh/Clear Artifacts]")
-                              .arg(pkts).arg(frames).arg(errors).arg(queueSize);
-        painter.drawText(10, 55, debugText);
+        painter.setFont(QFont("Consolas", 10, QFont::Bold));
+        QString debugText = QString("Packets: %1 | Decoded: %2 | Errors: %3")
+                              .arg(pkts).arg(frames).arg(errors);
+        painter.drawText(10, 40, debugText);
     }
 
     // ==========================================
