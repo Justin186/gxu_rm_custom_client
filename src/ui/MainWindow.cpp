@@ -210,8 +210,8 @@ void MainWindow::paintEvent(QPaintEvent *event) {
         float roRatio = qBound(0.0f, (float)redOutpostHp / redOutpostMax, 1.0f);
         drawParallelogramBar(
             x0, topY + 2, redOutpostW, barHOutpost, slant, roRatio,
-            QColor(55, 10, 10, 170), QColor(150, 40, 40, 220),
-            QColor(80, 20, 20), QColor(230, 70, 70), QColor(255, 140, 90),
+            QColor(35, 10, 10, 175), QColor(180, 50, 50, 220),
+            QColor(120, 20, 20), QColor(255, 90, 90), QColor(255, 170, 110),
             Qt::white, QString("%1/%2").arg(redOutpostHp).arg(redOutpostMax)
         );
 
@@ -273,8 +273,8 @@ void MainWindow::paintEvent(QPaintEvent *event) {
         float boRatio = qBound(0.0f, (float)blueOutpostHp / blueOutpostMax, 1.0f);
         drawParallelogramBar(
             centerX + centerClusterW + spacer + blueBaseW + spacer, topY + 2, blueOutpostW, barHOutpost, -slant, boRatio,
-            QColor(10, 10, 40, 170), QColor(70, 120, 200, 220),
-            QColor(20, 50, 130), QColor(120, 180, 255), QColor(180, 230, 255),
+            QColor(10, 10, 35, 175), QColor(50, 90, 180, 220),
+            QColor(20, 30, 120), QColor(90, 150, 255), QColor(160, 220, 255),
             Qt::white, QString("%1/%2").arg(blueOutpostHp).arg(blueOutpostMax)
         );
 
@@ -369,6 +369,10 @@ void MainWindow::paintEvent(QPaintEvent *event) {
         QString("%1/%2").arg(heat).arg(maxHeat)
     );
 
+    // 子弹射速
+    painter.setPen(QColor(255, 220, 120));
+    painter.drawText(width() - 260, height() - 70, QString("FIRE RATE: %1").arg(RobotState::instance().fireRate(), 0, 'f', 1));
+
     // ==========================================
     // 5. 准星与弹道线 (狙击手/步兵专属)
     // ==========================================
@@ -404,10 +408,10 @@ void MainWindow::paintEvent(QPaintEvent *event) {
     painter.setFont(QFont("Consolas", 12, QFont::Normal));
     if (!m_mouseLocked) {
         painter.setPen(QColor(255, 255, 0, 220));
-        painter.drawText(topCx - 90, height() - 45, "[ MOUSE UNLOCKED ]");
+        painter.drawText(topCx - 82, height() - 45, "[ MOUSE UNLOCKED ]");
     } else {
         painter.setPen(QColor(0, 255, 100, 220));
-        painter.drawText(topCx - 80, height() - 45, "[ MOUSE LOCKED ]");
+        painter.drawText(topCx - 70, height() - 45, "[ MOUSE LOCKED ]");
     }
     
     painter.setPen(QColor(0, 200, 255, 150));

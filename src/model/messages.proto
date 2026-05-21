@@ -107,17 +107,22 @@ message GameStatus {
 // 2.2.3 GlobalUnitStatus
 // 用途: 同步基地、前哨站和所有机器人状态 (频率: 1Hz)
 message GlobalUnitStatus {
-    // base_status 枚举值: 0:无敌, 1:解除无敌,护甲未展开, 2:解除无敌,护甲展开
+    // base_status 枚举值: 0:无敌, 1:存活,解除无敌,中部装甲旋转, 2:存活,解除无敌,中部装甲停转, 3:被击毁,不可重建, 4:被击毁,可重建, 5:被击毁,重建中
     // outpost_status 枚举值: 0:无敌, 1:存活,解除无敌,中部装甲旋转, 2:存活,解除无敌,中部装甲停转, 3:被击毁,不可重建, 4:被击毁,可重建
-    uint32 base_health = 1; // 基地当前血量(0=已摧毀)
-    uint32 base_status = 2; // 基地状态
-    uint32 base_shield = 3; // 基地当前护盾值(0=无护盾)
-    uint32 outpost_health = 4; // 前哨站当前血量(0=已摧毁)
-    uint32 outpost_status = 5; // 前哨站状态
-    repeated uint32 robot_health = 6; // 所有机器人血量(先己方后对方)
-    repeated int32 robot_bullets = 7; // 己方机器人剩余累计发弹量
-    uint32 total_damage_red = 8; // 己方累计总伤害
-    uint32 total_damage_blue = 9; // 对方累计总伤害
+    uint32 base_health = 1; // 己方基地当前血量(0=已摧毁)
+    uint32 base_status = 2; // 己方基地状态
+    uint32 base_shield = 3; // 己方基地当前护盾值(0=无护盾)
+    uint32 outpost_health = 4; // 己方前哨站当前血量(0=已摧毁)
+    uint32 outpost_status = 5; // 己方前哨站状态
+    uint32 enemy_base_health = 6; // 对方基地当前血量(0=已摧毁)
+    uint32 enemy_base_status = 7; // 对方基地状态
+    uint32 enemy_base_shield = 8; // 对方基地当前护盾值(0=无护盾)
+    uint32 enemy_outpost_health = 9; // 对方前哨站当前血量(0=已摧毁)
+    uint32 enemy_outpost_status = 10; // 对方前哨站状态
+    repeated uint32 robot_health = 11; // 所有机器人血量(按照己方1号，2号，3号，4号，7号，对方1号，2号，3号，4号，7号的顺序发送)
+    repeated int32 robot_bullets = 12; // 己方机器人剩余累计发弹量
+    uint32 total_damage_ally = 13; // 己方累计总伤害
+    uint32 total_damage_enemy = 14; // 对方累计总伤害
 }
 
 // 2.2.4 GlobalLogisticsStatus

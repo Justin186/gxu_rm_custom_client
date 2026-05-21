@@ -53,6 +53,17 @@ void RobotState::updateFromProtobuf(const QString& topic, const QByteArray& data
             locker.unlock();
             emit stateUpdated();
         }
+    } else if (topic == "GlobalUnitStatus") {
+        rm_client_up::GlobalUnitStatus global_status;
+        if (global_status.ParseFromArray(data.constData(), data.size())) {
+            QMutexLocker locker(&m_mutex);
+            m_redBaseHp = static_cast<int>(global_status.base_health());
+            m_redOutpostHp = static_cast<int>(global_status.outpost_health());
+            m_blueBaseHp = static_cast<int>(global_status.enemy_base_health());
+            m_blueOutpostHp = static_cast<int>(global_status.enemy_outpost_health());
+            locker.unlock();
+            emit stateUpdated();
+        }
     } else if (topic == "RobotDynamicStatus") {
         rm_client_up::RobotDynamicStatus dynamic_status;
         if (dynamic_status.ParseFromArray(data.constData(), data.size())) {
